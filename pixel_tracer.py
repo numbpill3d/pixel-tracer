@@ -102,10 +102,17 @@ def trace(input_path: Path, output_path: Path, width: int, colors: int,
           threshold: float, jitter: float, seed: int, underlay: bool,
           background: tuple[int, int, int] = (250, 248, 238),
           ink: tuple[int, int, int] = (35, 35, 35), style: str = "trace",
-          caption: str = "") -> None:
+          caption: str = "", chroma: int = 1, grain: float = 0.08,
+          paper: str | None = None) -> None:
+    papers = {"ivory": (250, 248, 238), "white": (255, 255, 255), "gray": (232, 232, 232)}
+    inks = {"charcoal": (35, 35, 35), "navy": (22, 46, 74), "green": (25, 75, 45)}
+    if paper is not None:
+        background = papers[paper]
+    if isinstance(ink, str):
+        ink = inks[ink]
     if style == "poster":
         poster_trace(input_path, output_path, width, colors, threshold, jitter, seed,
-                     underlay, background, ink, caption=caption)
+                     underlay, background, ink, chroma=chroma, grain=grain, caption=caption)
         return
     rng = random.Random(seed)
     source = Image.open(input_path).convert("RGB")
