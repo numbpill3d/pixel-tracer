@@ -19,13 +19,15 @@ class App(tk.Tk):
         self.threshold = tk.DoubleVar(value=0.19)
         self.jitter = tk.DoubleVar(value=0.55)
         self.underlay = tk.BooleanVar(value=False)
+        self.style = tk.StringVar(value="poster")
+        self.caption = tk.StringVar()
         self._build()
 
     def _build(self):
         frame = ttk.Frame(self, padding=18)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="PIXEL TRACER", font=("TkDefaultFont", 16, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(frame, text="Low-res, hand-wobbled contour art for GIMP").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 16))
+        ttk.Label(frame, text="Low-res, distressed character posters for GIMP").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 16))
         ttk.Label(frame, text="Image").grid(row=2, column=0, sticky="w")
         ttk.Entry(frame, textvariable=self.input_path, width=45).grid(row=2, column=1, sticky="ew")
         ttk.Button(frame, text="Browse", command=self.pick_input).grid(row=2, column=2, padx=(8, 0))
@@ -36,7 +38,11 @@ class App(tk.Tk):
         ttk.Label(frame, text="Edge threshold").grid(row=5, column=0, sticky="w")
         ttk.Scale(frame, from_=0.05, to=0.6, variable=self.threshold, orient="horizontal").grid(row=5, column=1, sticky="ew")
         ttk.Checkbutton(frame, text="Keep a faint image underlay", variable=self.underlay).grid(row=6, column=1, sticky="w", pady=8)
-        ttk.Button(frame, text="Trace and save PNG", command=self.run).grid(row=7, column=1, sticky="e", pady=(10, 0))
+        ttk.Label(frame, text="Style").grid(row=7, column=0, sticky="w")
+        ttk.Combobox(frame, textvariable=self.style, values=("poster", "trace"), state="readonly", width=12).grid(row=7, column=1, sticky="w")
+        ttk.Label(frame, text="Caption").grid(row=8, column=0, sticky="w")
+        ttk.Entry(frame, textvariable=self.caption).grid(row=8, column=1, sticky="ew")
+        ttk.Button(frame, text="Trace and save PNG", command=self.run).grid(row=9, column=1, sticky="e", pady=(10, 0))
         frame.columnconfigure(1, weight=1)
 
     def pick_input(self):
@@ -51,7 +57,8 @@ class App(tk.Tk):
             return
         try:
             trace(Path(self.input_path.get()), Path(self.output_path.get()), self.width.get(), 12,
-                  self.threshold.get(), self.jitter.get(), 7, self.underlay.get())
+                  self.threshold.get(), self.jitter.get(), 7, self.underlay.get(),
+                  style=self.style.get(), caption=self.caption.get())
             messagebox.showinfo("Done", f"Saved {self.output_path.get()}\nOpen it in GIMP to continue editing.")
         except Exception as exc:
             messagebox.showerror("Trace failed", str(exc))
