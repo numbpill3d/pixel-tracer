@@ -38,6 +38,45 @@ def _bayer(width: int, height: int) -> np.ndarray:
     return np.tile(matrix, (height // 4 + 1, width // 4 + 1))[:height, :width] / 16.0 - 0.5
 
 
+def iter_line_strokes(input_path: Path, width: int, colors: int, threshold: float,
+                      jitter: float, seed: int):
+    """Yield ordered, imperfect contour strokes for the live drawing preview."""
+    rng = random.Random(seed)
+    source = Image.open(input_path).convert("RGB")
+    height = max(16, round(width * source.height / source.width))
+    small = ImageOps.fit(source, (width, height), method=Image.Resampling.LANCZOS)
+    small = palette_image(small, colors)
+    arr = np.asarray(small).astype(float) / 255.0
+    gray = arr @ np.array([0.299, 0.587, 0.114])
+    edges = edge_map(gray)
+    h, w = edges.shape
+    for y in range(1, h - 1):
+        xs = np.flatnonzero(edges[y] >= threshold)
+        if not len(xs):
+            continue
+        runs = []
+        start = prev = int(xs[0])
+        for x in xs[1:]:
+            x = int(x)
+            if x - prev > 2:
+                runs.append((start, prev))
+                start = x
+            prev = x
+        runs.append((start, prev))
+        if y % 2:
+            runs.reverse()
+        for left, right in runs:
+            if right - left < 1:
+                continue
+            step = max(1, (right - left) // 5)
+            seq = list(range(left, right + 1, step))
+            if y % 2:
+                seq.reverse()
+            points = [(x + rng.uniform(-jitter, jitter), y + rng.uniform(-jitter, jitter)) for x in seq]
+            if len(points) > 1:
+                yield points
+
+
 def poster_trace(input_path: Path, output_path: Path, width: int, colors: int,
                  threshold: float, jitter: float, seed: int, underlay: bool,
                  background: tuple[int, int, int], ink: tuple[int, int, int],

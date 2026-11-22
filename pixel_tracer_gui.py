@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox
 
 from PIL import Image, ImageTk
 
-from pixel_tracer import trace
+from pixel_tracer import iter_line_strokes, trace
 
 
 BG = "#202522"
@@ -22,6 +22,65 @@ RUST = "#a8442a"
 GOLD = "#c49b54"
 INK = "#171a18"
 WHITE = "#f0e7cf"
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+
+
+class PhotoBrowser(tk.Toplevel):
+    """Small image-only browser; hidden files and folders are never listed."""
+    def __init__(self, parent, initial=""):
+        super().__init__(parent)
+        self.title("tracer — choose a photograph")
+        self.configure(bg=BG)
+        self.geometry("620x470")
+        self.transient(parent)
+        self.grab_set()
+        self.result = None
+        start = Path(initial).expanduser() if initial else Path.cwd()
+        self.directory = tk.StringVar(value=str(start if start.is_dir() else start.parent))
+        tk.Label(self, text="PHOTO BROWSER", bg=RUST, fg=WHITE, font=("DejaVu Sans Mono", 14, "bold"), anchor="w").pack(fill="x", ipady=8, padx=0)
+        bar = tk.Frame(self, bg=PANEL)
+        bar.pack(fill="x", padx=12, pady=12)
+        tk.Entry(bar, textvariable=self.directory, bg=INK, fg=WHITE, insertbackground=GOLD, relief="flat").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        tk.Button(bar, text="FOLDER", command=self.pick_folder, bg=PANEL_2, fg=WHITE, relief="flat").pack(side="left")
+        tk.Button(bar, text="REFRESH", command=self.refresh, bg=PANEL_2, fg=WHITE, relief="flat").pack(side="left", padx=(6, 0))
+        listing = tk.Frame(self, bg=BG)
+        listing.pack(fill="both", expand=True, padx=12)
+        self.listbox = tk.Listbox(listing, bg=INK, fg=BONE, selectbackground=RUST, selectforeground=WHITE,
+                                  relief="flat", highlightthickness=0, font=("DejaVu Sans Mono", 10))
+        self.listbox.pack(side="left", fill="both", expand=True)
+        scroll = tk.Scrollbar(listing, command=self.listbox.yview)
+        scroll.pack(side="right", fill="y")
+        self.listbox.config(yscrollcommand=scroll.set)
+        self.listbox.bind("<Double-Button-1>", lambda _event: self.choose())
+        bottom = tk.Frame(self, bg=PANEL)
+        bottom.pack(fill="x", padx=12, pady=12)
+        tk.Label(bottom, text="Only image files are shown; hidden dotfiles are excluded.", bg=PANEL, fg=BONE_DARK).pack(side="left")
+        tk.Button(bottom, text="CANCEL", command=self.destroy, bg=PANEL_2, fg=WHITE, relief="flat").pack(side="right", padx=(8, 0))
+        tk.Button(bottom, text="CHOOSE", command=self.choose, bg=GOLD, fg=INK, relief="flat").pack(side="right")
+        self.refresh()
+
+    def pick_folder(self):
+        folder = filedialog.askdirectory(parent=self, title="Choose photo folder", initialdir=self.directory.get())
+        if folder:
+            self.directory.set(folder)
+            self.refresh()
+
+    def refresh(self):
+        self.listbox.delete(0, tk.END)
+        folder = Path(self.directory.get()).expanduser()
+        try:
+            files = sorted((p for p in folder.iterdir() if p.is_file() and not p.name.startswith(".") and p.suffix.lower() in IMAGE_EXTENSIONS), key=lambda p: p.name.lower())
+        except (OSError, FileNotFoundError):
+            files = []
+        for path in files:
+            self.listbox.insert(tk.END, path.name)
+        self.files = files
+
+    def choose(self):
+        selected = self.listbox.curselection()
+        if selected:
+            self.result = str(self.files[selected[0]])
+            self.destroy()
 
 
 class Tracer(tk.Tk):
@@ -46,7 +105,10 @@ class Tracer(tk.Tk):
         self.underlay = tk.BooleanVar(value=False)
         self.caption = tk.StringVar()
         self.open_gimp = tk.BooleanVar(value=True)
+        self.live_draw = tk.BooleanVar(value=True)
+        self.draw_speed = tk.DoubleVar(value=1.0)
         self.preview_photo = None
+        self.animation_job = None
         self._build()
 
     def _label(self, parent, text, row, column=0, **kwargs):
@@ -93,9 +155,10 @@ class Tracer(tk.Tk):
         controls.pack_propagate(False)
         preview = tk.Frame(body, bg=INK)
         preview.pack(side="right", fill="both", expand=True)
-        self.preview = tk.Label(preview, text="NO IMAGE LOADED\n\nChoose a source and render a study.", bg=INK, fg=BONE_DARK,
-                                font=("DejaVu Sans Mono", 12), justify="center")
+        self.preview = tk.Canvas(preview, bg=INK, highlightthickness=0)
         self.preview.pack(fill="both", expand=True, padx=16, pady=16)
+        self.preview.create_text(340, 300, text="NO IMAGE LOADED\n\nChoose a source and render a study.", fill=BONE_DARK,
+                                font=("DejaVu Sans Mono", 12), justify="center", tags="placeholder")
 
         self._section(controls, "SOURCE / OUTPUT", 0)
         self._label(controls, "Image", 1)
@@ -136,18 +199,23 @@ class Tracer(tk.Tk):
         self._entry(controls, self.caption, 16)
         tk.Checkbutton(controls, text="Open result in GIMP", variable=self.open_gimp, bg=PANEL, fg=BONE,
                        selectcolor=INK, activebackground=PANEL, activeforeground=WHITE).grid(row=17, column=0, columnspan=3, sticky="w", padx=8, pady=4)
+        tk.Checkbutton(controls, text="Live human stroke playback", variable=self.live_draw, bg=PANEL, fg=BONE,
+                       selectcolor=INK, activebackground=PANEL, activeforeground=WHITE).grid(row=18, column=0, columnspan=3, sticky="w", padx=8, pady=4)
+        self._label(controls, "Draw speed", 19)
+        self._scale(controls, self.draw_speed, 19, 0.25, 3.0, 0.05)
         tk.Button(controls, text="  RENDER STUDY  ", command=self.render, bg=GOLD, fg=INK,
                   activebackground=WHITE, activeforeground=INK, relief="flat",
-                  font=("DejaVu Sans Mono", 11, "bold"), pady=7).grid(row=18, column=0, columnspan=3, sticky="ew", padx=12, pady=(14, 4))
+                  font=("DejaVu Sans Mono", 11, "bold"), pady=7).grid(row=20, column=0, columnspan=3, sticky="ew", padx=12, pady=(14, 4))
         self.status = tk.Label(controls, text="Ready.", bg=PANEL, fg=BONE_DARK, anchor="w", wraplength=330)
-        self.status.grid(row=19, column=0, columnspan=3, sticky="ew", padx=12, pady=5)
+        self.status.grid(row=21, column=0, columnspan=3, sticky="ew", padx=12, pady=5)
         controls.columnconfigure(1, weight=1)
 
     def pick_input(self):
-        path = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.gif"), ("All files", "*.*")])
-        if path:
-            self.input_path.set(path)
-            source = Path(path)
+        browser = PhotoBrowser(self, self.input_path.get())
+        self.wait_window(browser)
+        if browser.result:
+            source = Path(browser.result)
+            self.input_path.set(str(source))
             self.output_path.set(str(source.with_name(source.stem + "-tracer.png")))
             self.status.config(text=f"Loaded {source.name}")
 
@@ -160,6 +228,54 @@ class Tracer(tk.Tk):
         if not self.input_path.get():
             messagebox.showwarning("No source", "Choose an image first.")
             return
+        if self.animation_job is not None:
+            self.after_cancel(self.animation_job)
+            self.animation_job = None
+        if self.live_draw.get():
+            self.animate_lines()
+        else:
+            self._render_final()
+
+    def animate_lines(self):
+        try:
+            strokes = list(iter_line_strokes(Path(self.input_path.get()), self.width.get(), self.colors.get(),
+                                              self.threshold.get(), self.jitter.get(), self.seed.get()))
+        except Exception as exc:
+            messagebox.showerror("Animation failed", str(exc))
+            return
+        self.preview.delete("all")
+        self.preview.update_idletasks()
+        canvas_w = max(100, self.preview.winfo_width())
+        canvas_h = max(100, self.preview.winfo_height())
+        source = Image.open(self.input_path.get())
+        source_h = max(16, round(self.width.get() * source.height / source.width))
+        scale = min((canvas_w - 30) / self.width.get(), (canvas_h - 30) / source_h)
+        ox = (canvas_w - self.width.get() * scale) / 2
+        oy = (canvas_h - source_h * scale) / 2
+        self.preview.create_rectangle(0, 0, canvas_w, canvas_h, fill=INK, outline="", tags="animation")
+        self.status.config(text=f"Drawing {len(strokes)} human-like strokes…")
+        state = {"index": 0}
+
+        def step():
+            index = state["index"]
+            if index >= len(strokes):
+                self.animation_job = None
+                self._render_final()
+                return
+            points = strokes[index]
+            coords = []
+            for x, y in points:
+                coords.extend((ox + x * scale, oy + y * scale))
+            self.preview.create_line(*coords, fill=BONE, width=max(1, round(scale * 0.65)),
+                                     capstyle=tk.ROUND, joinstyle=tk.ROUND, tags="animation")
+            state["index"] += 1
+            distance = max(1, len(points))
+            delay = max(8, int((18 + distance * 7) / self.draw_speed.get()))
+            self.animation_job = self.after(delay, step)
+
+        step()
+
+    def _render_final(self):
         try:
             trace(Path(self.input_path.get()), Path(self.output_path.get()), self.width.get(), self.colors.get(),
                   self.threshold.get(), self.jitter.get(), self.seed.get(), self.underlay.get(),
@@ -175,9 +291,11 @@ class Tracer(tk.Tk):
 
     def _show_preview(self, path: Path):
         image = Image.open(path)
-        image.thumbnail((680, 680), Image.Resampling.LANCZOS)
+        image.thumbnail((max(100, self.preview.winfo_width() - 20), max(100, self.preview.winfo_height() - 20)), Image.Resampling.LANCZOS)
         self.preview_photo = ImageTk.PhotoImage(image)
-        self.preview.config(image=self.preview_photo, text="")
+        self.preview.delete("all")
+        self.preview.create_image(self.preview.winfo_width() // 2, self.preview.winfo_height() // 2,
+                                 image=self.preview_photo, anchor="center")
 
 
 if __name__ == "__main__":

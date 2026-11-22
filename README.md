@@ -39,8 +39,11 @@ The installed application is named **tracer** and is also available from the
 KDE application menu under Graphics. Its workbench exposes every renderer
 control: style, pixel width, palette size, edge threshold, hand wobble, seed,
 RGB offset, grain, paper, ink, underlay, caption, output path, and whether to
-open the result in GIMP. The interface uses a retro Macintosh layout with a
-Morrowind-inspired ash, moss, bone, rust, and gold palette.
+open the result in GIMP. Its photo browser lists image files only and omits
+hidden dotfiles. Live human-stroke playback draws the contour study in the
+preview with ordered, slightly varied timing before the final poster render.
+The interface uses a retro Macintosh layout with a Morrowind-inspired ash,
+moss, bone, rust, and gold palette.
 
 Useful controls:
 
