@@ -3,11 +3,11 @@
 Turn a photo into a deliberately imperfect, low-resolution drawing that looks
 like it was made in classic MS Paint, then continue editing the PNG in GIMP.
 
-The default `poster` style is tuned for character sheets and distressed anime-
-poster references: it preserves the full image, reduces it to a compact color
-palette, adds ordered screen dithering and grain, strengthens dark contours,
-and applies a tiny RGB registration offset. This is a much better fit for
-finished illustrations than the original contour-only mode.
+The default `paint` style is tuned for classic MS Paint output: it reduces the
+image to a compact color palette, keeps the fills flat, draws a strict one-
+working-pixel contour, and enlarges with nearest-neighbor scaling. `poster`
+remains available for distressed print texture, while `trace` makes contour-
+only line art.
 
 ![Original demo image](assets/demo-input.png)
 
@@ -55,7 +55,9 @@ Useful controls:
 --seed 12         repeatable variation
 --paper gray      use a gray Paint-like canvas
 --ink navy        use navy pixel ink
---style trace     use the original contour-only renderer
+--style paint     flat limited-color MS Paint drawing (default)
+--style poster    distressed print treatment
+--style trace     contour-only line art
 --chroma 1        add one working-pixel RGB misregistration offset
 --grain 0.10      increase photocopy/screen texture
 --caption "... IT'S ALL OVER, ISN'T IT?"  add a black caption bar

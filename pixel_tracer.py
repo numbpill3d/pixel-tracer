@@ -137,6 +137,38 @@ def poster_trace(input_path: Path, output_path: Path, width: int, colors: int,
     result.save(output_path)
 
 
+def paint_trace(input_path: Path, output_path: Path, width: int, colors: int,
+                threshold: float, seed: int, background: tuple[int, int, int],
+                ink: tuple[int, int, int], underlay: bool = False) -> None:
+    """Create a flat-color, one-working-pixel-line MS Paint-style drawing."""
+    source = Image.open(input_path).convert("RGB")
+    height = max(16, round(width * source.height / source.width))
+    small = ImageOps.fit(source, (width, height), method=Image.Resampling.LANCZOS)
+    small = palette_image(small, max(4, colors))
+    arr = np.asarray(small).astype(float) / 255.0
+    gray = arr @ np.array([0.299, 0.587, 0.114])
+    edges = edge_map(gray)
+
+    # Hard threshold: exactly one crisp working pixel of ink, with no soft halo.
+    mask = Image.fromarray(np.uint8((edges >= threshold) * 255), "L")
+    line_layer = Image.new("RGB", small.size, ink)
+    art = Image.composite(line_layer, small, mask)
+    if underlay:
+        art = Image.blend(art, small, 0.12)
+
+    # Keep the paper/background option meaningful for near-white source pixels.
+    pixels = np.asarray(art).copy()
+    source_pixels = np.asarray(small)
+    near_white = np.all(source_pixels > 245, axis=2)
+    pixels[near_white & (edges < threshold)] = background
+    art = Image.fromarray(pixels.astype(np.uint8), "RGB")
+
+    scale = max(1, round(960 / max(width, 1)))
+    result = art.resize((width * scale, height * scale), Image.Resampling.NEAREST)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save(output_path)
+
+
 def trace(input_path: Path, output_path: Path, width: int, colors: int,
           threshold: float, jitter: float, seed: int, underlay: bool,
           background: tuple[int, int, int] = (250, 248, 238),
@@ -149,6 +181,10 @@ def trace(input_path: Path, output_path: Path, width: int, colors: int,
         background = papers[paper]
     if isinstance(ink, str):
         ink = inks[ink]
+    if style == "paint":
+        paint_trace(input_path, output_path, width, colors, threshold, seed,
+                    background, ink, underlay)
+        return
     if style == "poster":
         poster_trace(input_path, output_path, width, colors, threshold, jitter, seed,
                      underlay, background, ink, chroma=chroma, grain=grain, caption=caption)
@@ -229,8 +265,8 @@ def main() -> int:
     parser.add_argument("--underlay", action="store_true", help="faintly retain the source beneath the trace")
     parser.add_argument("--paper", choices=("ivory", "white", "gray"), default="ivory")
     parser.add_argument("--ink", choices=("charcoal", "navy", "green"), default="charcoal")
-    parser.add_argument("--style", choices=("poster", "trace"), default="poster",
-                        help="poster preserves the art with pixel-print texture; trace makes line art")
+    parser.add_argument("--style", choices=("paint", "poster", "trace"), default="paint",
+                        help="paint makes flat limited-color MS Paint art; poster adds print texture; trace makes line art")
     parser.add_argument("--chroma", type=int, default=1, help="horizontal RGB misregistration in working pixels")
     parser.add_argument("--grain", type=float, default=0.08, help="screen/photocopy grain amount")
     parser.add_argument("--caption", default="", help="optional caption in a black bottom bar")
@@ -238,7 +274,10 @@ def main() -> int:
     args = parser.parse_args()
     papers = {"ivory": (250, 248, 238), "white": (255, 255, 255), "gray": (232, 232, 232)}
     inks = {"charcoal": (35, 35, 35), "navy": (22, 46, 74), "green": (25, 75, 45)}
-    if args.style == "poster":
+    if args.style == "paint":
+        paint_trace(args.input, args.output, args.width, args.colors, args.threshold, args.seed,
+                    papers[args.paper], inks[args.ink], args.underlay)
+    elif args.style == "poster":
         poster_trace(args.input, args.output, args.width, args.colors, args.threshold, args.jitter,
                      args.seed, args.underlay, papers[args.paper], inks[args.ink],
                      args.chroma, args.grain, args.caption)
